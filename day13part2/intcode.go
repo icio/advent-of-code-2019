@@ -8,6 +8,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -32,7 +33,18 @@ func main() {
 	// repeated play of the game.
 	intcode[0] = 2
 
+	// Run the game.
 	player := newPaddleAI()
+	player.draw = func() {
+		for y := player.t; y <= player.b; y++ {
+			for x := player.l; x <= player.r; x++ {
+				fmt.Print(player.world[coord{x, y}])
+			}
+			fmt.Println()
+		}
+		fmt.Println(player.score)
+		time.Sleep(80 * time.Millisecond)
+	}
 	err = exec(&prog{
 		io:  player,
 		mem: intcode,
@@ -40,6 +52,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	player.draw()
 
 	fmt.Println(player.score)
 }
@@ -79,6 +92,9 @@ type paddleAI struct {
 
 	display  [3]int64
 	displayN int
+
+	draw       func()
+	l, r, t, b int64
 }
 
 type coord struct{ x, y int64 }
@@ -91,6 +107,23 @@ const (
 	tilePaddle = 3
 	tileBall   = 4
 )
+
+func (t tile) String() string {
+	switch t {
+	case tileEmpty:
+		return " "
+	case tileWall:
+		return "#"
+	case tileBlock:
+		return "@"
+	case tilePaddle:
+		return "M"
+	case tileBall:
+		return "o"
+	default:
+		return strconv.Itoa(int(t))
+	}
+}
 
 func newPaddleAI() *paddleAI {
 	return &paddleAI{
@@ -105,6 +138,10 @@ func newPaddleAI() *paddleAI {
 // * -1: left position
 // * +1: right position
 func (p *paddleAI) Input() (int64, error) {
+	if p.draw != nil {
+		p.draw()
+	}
+
 	// Ball/Paddle Left/right.
 	bl := int64(-1)
 	br := int64(-1)
@@ -159,6 +196,20 @@ func (p *paddleAI) Output(n int64) error {
 		p.score = t
 	} else {
 		p.world[coord{x, y}] = tile(t)
+
+		// Track the extents.
+		if x < p.l {
+			p.l = x
+		}
+		if x > p.r {
+			p.r = x
+		}
+		if y < p.t {
+			p.t = y
+		}
+		if y > p.b {
+			p.b = y
+		}
 	}
 	return nil
 }
@@ -302,7 +353,7 @@ func (p param) String() string {
 	case flagPos:
 		return "(*" + strconv.Itoa(p.p) + " -> " + strconv.FormatInt(p.v, 10) + ")"
 	case flagRel:
-		return "(*" + strconv.Itoa(p.p) + "-" + strconv.Itoa(p.r) + " -> " + strconv.FormatInt(p.v, 10) + ")"
+		return fmt.Sprintf("(*%d%+d -> %d)", p.p-p.r, p.r, p.v)
 	}
 	return fmt.Sprintf("%#v", p)
 }
